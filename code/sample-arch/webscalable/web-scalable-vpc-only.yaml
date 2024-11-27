@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description:
+  Single-AZ WordPress Blog Site Sample
+
+Parameters:
+  DatabaseMasterName:
+    Description: Database Master User Name
+    Type : String
+    Default: admin
+  DatabaseMasterPassword:
+    Description: Database Master User Password
+    Type : String
+  DatabaseName:
+    Description: Database Name
+    Type : String
+    Default: wordpress
+  EngineVersion:
+    Description: Engine Version
+    Type : String
+    Default: 8.0.35
+  EC2AMIId:
+    Description: AMI ID
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64"
+  EnvironmentName:
+    Type: String
+    Default: Test-CFn-WP
+
+Resources:
+  # ------------------------------------------------------------#
+  #  VPC
+  # ------------------------------------------------------------#
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      InstanceTenancy: default
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC
+
+  # ------------------------------------------------------------#
+  #  Internet Gateway
+  # ------------------------------------------------------------#
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-IGW
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ------------------------------------------------------------#
+  #  Route Table
+  # ------------------------------------------------------------#
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-RTB
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # ------------------------------------------------------------#
+  #  Public Sunbet A
+  # ------------------------------------------------------------#
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "0"
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: 'true'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-PublicSubnet-A
+  PublicRouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref RouteTable
+
+  # ------------------------------------------------------------#
+  #  Private Sunbet A
+  # ------------------------------------------------------------#
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "0"
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: 'false'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-PrivateSubnet-A
+
+  # ------------------------------------------------------------#
+  #  Public Sunbet C
+  # ------------------------------------------------------------#
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    DependsOn: AttachGateway
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "1"
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: 'true'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-PublicSubnet-C
+  PublicRouteTableAssociationC:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref RouteTable
+
+  # ------------------------------------------------------------#
+  #  Private Sunbet C
+  # ------------------------------------------------------------#
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "1"
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: 'false'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-VPC-PrivateSubnet-C
+
+# --------
+# Output
+# --------
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+    Export:
+      Name: cfn-workshop-VpcId
+  PublicSubnetA:
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub ${EnvironmentName}-PublicSubnetA
+  PublicSubnetC:
+    Value: !Ref PublicSubnetC
+    Export:
+      Name: !Sub ${EnvironmentName}-PublicSubnet2
+  PrivateSubnetA:
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub ${EnvironmentName}-PrivateSubnetA
+  PrivateSubnetC:
+    Value: !Ref PrivateSubnetC
+    Export:
+      Name: !Sub ${EnvironmentName}-PrivateSubnet2
