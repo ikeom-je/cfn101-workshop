@@ -453,6 +453,9 @@ Outputs:
   EC2WebsiteURL:
     Description: EC2 URL
     Value: !Sub http://${EC2Instance.PublicIp}
+  RDBDNS:
+    Description: DB DNS
+    Value: !GetAtt RDSDatabase.Endpoint.Address
   ALBWebsiteURL:
     Description: ALB URL
     Value: !Sub http://${ApplicationLoadBalancer.DNSName}

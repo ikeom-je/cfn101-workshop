@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
+
 Description:
   multi-AZ WordPress Blog Site Sample -- Web Scalable Handson
 
@@ -170,38 +171,12 @@ Resources:
       - Key: Name
         Value: !Sub ${EnvironmentName}-VPC-PrivateSubnet-C
 
-  # ------------------------------------------------------------#
-  #  ALB Security Group
-  # ------------------------------------------------------------#
-  ALBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Sub ${EnvironmentName}-ALB-SG
-      GroupDescription: Allow HTTP and HTTPS access from internet
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        # http
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: "0.0.0.0/0"
-        # https
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: "0.0.0.0/0"
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-ALB-SG
-
- 
 
   # ------------------------------------------------------------#
   #  EC2 Security Group
   # ------------------------------------------------------------#
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    #DependsOn: ALBSecurityGroup
     Properties:
       GroupName: !Sub ${EnvironmentName}-EC2-SG
       GroupDescription: Allow HTTP and HTTPS from ALBSecurityGroup
@@ -212,13 +187,11 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-          #SourceSecurityGroupId: !Ref ALBSecurityGroup
         # HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
-          #SourceSecurityGroupId: !Ref ALBSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: "0.0.0.0/0"
@@ -277,9 +250,13 @@ Resources:
       InstanceInitiatedShutdownBehavior: 'stop'
       InstanceType: t2.micro
       IamInstanceProfile: !Ref EC2InstanceProfile
-      SecurityGroupIds:
-        - !Ref EC2SecurityGroup
-      SubnetId: !Ref PublicSubnetA
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "EC2SecurityGroup"
+          SubnetId: 
+            Ref: "PublicSubnetA"
       Tenancy: default
       Tags:
         - Key: Name
@@ -400,9 +377,9 @@ Outputs:
   WebServerPublicDNS:
     Description: Public DNS of EC2 instance
     Value: !GetAtt EC2Instance.PublicDnsName
-  WebsiteURL:
-    Description: Application URL
+  EC2WebsiteURL:
+    Description: EC2 URL
     Value: !Sub http://${EC2Instance.PublicIp}
-  RDSDatabaseDNS:
-    Description: RDS DNS
-    Value: !GetAtt RDSDatabase.DNSName
+  RDBDNS:
+    Description: DB DNS
+    Value: !GetAtt RDSDatabase.Endpoint.Address

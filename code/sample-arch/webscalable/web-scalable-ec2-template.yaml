@@ -1,20 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
+
 Description:
-  Single-AZ WordPress Blog Site Sample-VPC onlyl
+  multi-AZ WordPress Blog Site Sample -- Web Scalable Handson
 
 Parameters:
-  DatabaseMasterName:
-    Description: Database Master User Name
-    Type : String
-    Default: admin
-  DatabaseMasterPassword:
-    Description: Database Master User Password
-    Type : String
-  DatabaseName:
-    Description: Database Name
-    Type : String
-    Default: wordpress
   EngineVersion:
     Description: Engine Version
     Type : String
@@ -26,6 +16,20 @@ Parameters:
   EnvironmentName:
     Type: String
     Default: Test-CFn-WP
+  #KeyName:
+  #  Description: The EC2 Key Pair to allow SSH access to the instance
+  #  Type: "AWS::EC2::KeyPair::KeyName"
+  #AZone:
+  #  Description: Available AZ
+  #  Type: String
+  #  Default: us-east-1
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: CIDR IP range that is permitted to access the bastions. We recommend
+      that you set this value to a trusted IP range.
+    Type: String
+    Default: 0.0.0.0/0
 
 Resources:
   # ------------------------------------------------------------#
@@ -156,6 +160,118 @@ Resources:
       - Key: Name
         Value: !Sub ${EnvironmentName}-VPC-PrivateSubnet-C
 
+
+  # ------------------------------------------------------------#
+  #  EC2 Security Group
+  # ------------------------------------------------------------#
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-EC2-SG
+      GroupDescription: Allow HTTP and HTTPS from ALBSecurityGroup
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # HTTP
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        # HTTPS
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2-SG
+
+  # ------------------------------------------------------------#
+  #  EC2 Role for SSM
+  # ------------------------------------------------------------#
+  EC2RoleforSSM:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-SSM-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+  # ------------------------------------------------------------#
+  #  EC2 Instance Profile
+  # ------------------------------------------------------------#
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2RoleforSSM
+
+  # ------------------------------------------------------------#
+  #  EC2
+  # ------------------------------------------------------------#
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "0"
+          - Fn::GetAZs: ""
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+      ImageId: !Ref EC2AMIId
+      InstanceInitiatedShutdownBehavior: 'stop'
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "EC2SecurityGroup"
+          SubnetId: 
+            Ref: "PublicSubnetA"
+      Tenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2-Instance
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          dnf update -y
+          dnf install -y httpd wget php-fpm php-mysqli php-json php php-devel mariadb105
+          dnf install -y httpd wget git jq
+          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          sudo systemctl enable amazon-ssm-agent
+          sudo systemctl start amazon-ssm-agent
+          wget http://ja.wordpress.org/latest-ja.tar.gz -P /tmp/
+          tar zxvf /tmp/latest-ja.tar.gz -C /tmp
+          cp -r /tmp/wordpress/* /var/www/html/
+          chown apache:apache -R /var/www/html
+          cd /var/www/html
+          mkdir healths
+          cd healths
+          touch wp-check
+          systemctl enable httpd.service
+          systemctl start httpd.service
+
+  
+
 # --------
 # Output
 # --------
@@ -180,3 +296,9 @@ Outputs:
     Value: !Ref PrivateSubnetC
     Export:
       Name: !Sub ${EnvironmentName}-PrivateSubnet2
+  WebServerPublicDNS:
+    Description: Public DNS of EC2 instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+  EC2WebsiteURL:
+    Description: EC2 URL
+    Value: !Sub http://${EC2Instance.PublicIp}
