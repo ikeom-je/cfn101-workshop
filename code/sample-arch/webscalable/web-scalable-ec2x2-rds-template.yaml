@@ -280,6 +280,53 @@ Resources:
           systemctl enable httpd.service
           systemctl start httpd.service
 
+  EC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - "1"
+          - Fn::GetAZs: ""
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+      ImageId: !Ref EC2AMIId
+      InstanceInitiatedShutdownBehavior: 'stop'
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "EC2SecurityGroup"
+          SubnetId: 
+            Ref: "PublicSubnetC"
+      Tenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2-Instance
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          dnf update -y
+          dnf install -y httpd wget php-fpm php-mysqli php-json php php-devel mariadb105
+          dnf install -y httpd wget git jq
+          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          sudo systemctl enable amazon-ssm-agent
+          sudo systemctl start amazon-ssm-agent
+          wget http://ja.wordpress.org/latest-ja.tar.gz -P /tmp/
+          tar zxvf /tmp/latest-ja.tar.gz -C /tmp
+          cp -r /tmp/wordpress/* /var/www/html/
+          chown apache:apache -R /var/www/html
+          cd /var/www/html
+          mkdir healths
+          cd healths
+          touch wp-check
+          systemctl enable httpd.service
+          systemctl start httpd.service
+
   # ------------------------------------------------------------#
   #  Database Subnet Group
   # ------------------------------------------------------------#
@@ -373,12 +420,18 @@ Outputs:
     Value: !Ref PrivateSubnetC
     Export:
       Name: !Sub ${EnvironmentName}-PrivateSubnet2
-  WebServerPublicDNS:
-    Description: Public DNS of EC2 instance
+  WebServer1PublicDNS:
+    Description: Public DNS of EC2 instance1
     Value: !GetAtt EC2Instance.PublicDnsName
-  EC2WebsiteURL:
-    Description: EC2 URL
+  EC2Website1URL:
+    Description: EC2-1 URL
     Value: !Sub http://${EC2Instance.PublicIp}
+  WebServer2PublicDNS:
+      Description: Public DNS of EC2 instance2
+      Value: !GetAtt EC2Instance2.PublicDnsName
+  EC2Website2URL:
+      Description: EC2-2 URL
+      Value: !Sub http://${EC2Instance2.PublicIp}
   RDBDNS:
     Description: DB DNS
     Value: !GetAtt RDSDatabase.Endpoint.Address
